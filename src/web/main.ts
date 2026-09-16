@@ -89,6 +89,8 @@ async function main() {
   const outlet = document.getElementById("app")!;
   const header = document.getElementById("header-user")!;
   document.body.append(banner);
+  const offlineBar = document.getElementById("offline")!;
+  window.addEventListener("connectivity", (e) => (offlineBar.hidden = navigator.onLine && (e as CustomEvent<boolean>).detail));
   await refreshSession();
   const paintHeader = () => {
     header.replaceChildren(session.me ? h("a", { href: "#/operatori", class: "header-link" }, session.me.name) : h("a", { href: "#/accesso", class: "header-link" }, "Operatori"));
@@ -97,14 +99,15 @@ async function main() {
   window.addEventListener("hashchange", paintHeader);
   startRouter(outlet);
 
-  const offline = document.getElementById("offline")!;
   const net = () => {
-    offline.hidden = navigator.onLine;
+    // Optimistic on "online"; a failing request shows the bar again through the connectivity event.
+    offlineBar.hidden = navigator.onLine;
     if (navigator.onLine) void flushOutbox();
   };
   window.addEventListener("online", net);
   window.addEventListener("offline", net);
-  net();
+  if (!navigator.onLine) offlineBar.hidden = false;
+  void flushOutbox();
   // "online" is unreliable on phones that regain signal: retry periodically and when the app is reopened.
   setInterval(() => void flushOutbox(), 60_000);
   document.addEventListener("visibilitychange", () => {

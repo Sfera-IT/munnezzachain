@@ -17,8 +17,11 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   try {
     res = await fetch(`/api${path}`, { ...rest, headers, body: json !== undefined ? JSON.stringify(json) : rest.body, credentials: "same-origin" });
   } catch {
+    // navigator.onLine can say true with no usable connection (weak signal, some browsers): report what happened.
+    window.dispatchEvent(new CustomEvent("connectivity", { detail: false }));
     throw new ApiError(0, "Connessione assente o server non raggiungibile");
   }
+  window.dispatchEvent(new CustomEvent("connectivity", { detail: true }));
   const serverVersion = res.headers.get("x-app-version");
   if (serverVersion) versionListeners.forEach((fn) => fn(serverVersion));
   const data = (await res.json().catch(() => ({}))) as { error?: string };
