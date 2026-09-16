@@ -94,6 +94,18 @@ export async function runUiTests(base: string, adminLogin: string, adminPassword
 
     section("UI: pagine pubbliche");
     await page.waitForSelector(".hero h1");
+    {
+      // A fresh profile, counting every document load in the tab from the very first one.
+      const context = await browser.createBrowserContext();
+      const fresh = await context.newPage();
+      await fresh.evaluateOnNewDocument(() => sessionStorage.setItem("caricamenti", String(Number(sessionStorage.getItem("caricamenti") ?? 0) + 1)));
+      await fresh.goto(`${base}/#/`, { waitUntil: "domcontentloaded" });
+      await fresh.waitForFunction(() => Boolean(navigator.serviceWorker.controller), { timeout: 15000 });
+      await sleep(1500);
+      const loads = await fresh.evaluate(() => sessionStorage.getItem("caricamenti"));
+      await context.close();
+      ok(loads === "1", `alla prima visita il service worker prende il controllo senza ricaricare la pagina (caricamenti: ${loads})`);
+    }
     ok(await page.$eval('link[rel="manifest"]', (l) => Boolean(l.getAttribute("href"))), "la home si carica ed espone il manifest PWA");
     await axe(page, "home");
     await go(page, base, "#/verifica", ".dropzone");

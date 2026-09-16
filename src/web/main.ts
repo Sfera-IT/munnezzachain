@@ -57,6 +57,9 @@ function offerUpdate(sw: ServiceWorker) {
 
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
+  // On a first visit the worker takes control of a page that is already current: reloading it would only throw
+  // away whatever the user started. Only a controller replacing another one means new code.
+  let hadController = Boolean(navigator.serviceWorker.controller);
   const reg = await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
   if (reg.waiting && navigator.serviceWorker.controller) offerUpdate(reg.waiting);
   reg.addEventListener("updatefound", () => {
@@ -67,6 +70,10 @@ async function registerServiceWorker() {
   });
   let reloading = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) {
+      hadController = true;
+      return;
+    }
     if (reloading) return;
     reloading = true;
     location.reload();
