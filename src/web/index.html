@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Munnezzachain — Segnalazioni ambientali</title>
+    <meta name="description" content="Segnala problemi ambientali con foto autenticate: posizione, ora e integrità garantite." />
+    <meta name="theme-color" content="#14532d" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b1f14" media="(prefers-color-scheme: dark)" />
+    <meta name="app-version" content="%VERSION%" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="%CSS%" />
+    <script type="module" src="%JS%"></script>
+  </head>
+  <body>
+    <a class="skip" href="#app">Vai al contenuto</a>
+    <header class="topbar">
+      <a class="brand" href="#/">
+        <img src="/icons/favicon.svg" alt="" width="28" height="28" />
+        <span>Munnezzachain</span>
+      </a>
+      <div id="header-user"></div>
+    </header>
+    <div id="offline" class="offline-bar" hidden>Sei offline. Le segnalazioni vengono salvate e inviate al ritorno della connessione.</div>
+    <main id="app" tabindex="-1"><p class="muted">Caricamento…</p></main>
+    <footer class="footer">
+      <a href="#/privacy">Privacy</a>
+      <a href="#/verifica">Verifica</a>
+      <span id="version"></span>
+    </footer>
+    <noscript>Questa applicazione richiede JavaScript.</noscript>
+  </body>
+</html>

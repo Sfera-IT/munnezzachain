@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "munnezzachain",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "routes": [{ "pattern": "munnezzachain.margiovanni.it", "custom_domain": true }],
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "munnezzachain",
+      "database_id": "61a0516e-2df1-4435-aaee-49ad9c1d05bd",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // EU jurisdiction: photos, positions and contacts never leave the EU.
+  "r2_buckets": [{ "binding": "EVIDENCE", "bucket_name": "munnezzachain-evidence", "jurisdiction": "eu" }],
+  "ratelimits": [
+    { "name": "PUBLIC_SUBMIT_LIMITER", "namespace_id": "2001", "simple": { "limit": 5, "period": 60 } },
+    { "name": "LOGIN_LIMITER", "namespace_id": "2002", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "vars": {
+    // FreeTSA is fine for a pilot. For legal weight use a qualified eIDAS TSA and set TSA_USERNAME/TSA_PASSWORD as secrets.
+    "TSA_URL": "https://freetsa.org/tsr",
+    "PUBLIC_AREA_BBOX": "",
+    "PRIVACY_CONTACT": "",
+    "TURNSTILE_SITE_KEY": ""
+  }
+}

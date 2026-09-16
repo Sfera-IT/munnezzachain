@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+.dev.vars*
+public/assets/
+public/sw.js
+worker-configuration.d.ts
+.DS_Store
+coverage/
+public/index.html
+public/version.json
+.app-version
