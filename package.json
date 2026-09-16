@@ -13,7 +13,8 @@
     "deploy": "npm run typecheck && npm test && node scripts/build-web.ts && wrangler deploy --var APP_VERSION:$(cat .app-version)",
     "icons": "node scripts/make-icons.ts",
     "test:e2e": "node test/e2e/run.ts",
-    "test:all": "npm run typecheck && npm test && npm run test:e2e"
+    "test:all": "npm run typecheck && npm test && npm run test:e2e",
+    "screenshots": "node scripts/screenshots.ts"
   },
   "repository": {
     "type": "git",

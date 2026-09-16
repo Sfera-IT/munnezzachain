@@ -4,6 +4,13 @@ Web app installabile (PWA) per segnalare problemi ambientali — rifiuti abbando
 
 Nasce da un problema concreto: le foto mandate per email o chat perdono il GPS, e l'EXIF che sopravvive è comunque modificabile. Qui non ci si fida del file che arriva: la foto si scatta nell'app, che registra la posizione del telefono e sigilla il file con un'impronta prima dell'invio.
 
+<p align="center">
+  <img src="docs/screenshots/02-fotocamera.png" width="200" alt="Fotocamera dell'app con la posizione GPS e la sua precisione">
+  <img src="docs/screenshots/03-nuova-segnalazione.png" width="200" alt="Modulo di nuova segnalazione con la foto e la posizione rilevata">
+  <img src="docs/screenshots/04-ricevuta.png" width="200" alt="Ricevuta con codice, anello della catena e marca temporale">
+  <img src="docs/screenshots/05-verifica.png" width="200" alt="Verifica pubblica di una foto registrata">
+</p>
+
 ## Come funziona
 
 - **Scatto in app**: fotocamera e GPS del telefono letti nello stesso istante, EXIF scritto dall'app, SHA-256 calcolato sul dispositivo.
@@ -16,6 +23,19 @@ Nasce da un problema concreto: le foto mandate per email o chat perdono il GPS, 
 - **Verifica pubblica**: chiunque può controllare se un file è registrato, calcolando l'impronta sul proprio dispositivo.
 
 Il pubblico può solo scattare con l'app; gli operatori possono anche caricare dalla galleria, con avvisi sulla provenienza.
+
+## Pannello operatori
+
+![Elenco delle segnalazioni con la mappa](docs/screenshots/06-pannello-operatori.png)
+
+| | |
+|---|---|
+| ![Dettaglio di una foto con provenienza, avvisi, catena e marca temporale](docs/screenshots/07-dettaglio-segnalazione.png) | ![Moderazione di una segnalazione pubblica con immagine sfocata](docs/screenshots/08-moderazione.png) |
+| Ogni foto con provenienza, posizione, EXIF, avvisi e impronte | Le segnalazioni del pubblico si moderano con l'immagine sfocata |
+
+![Verifica dell'integrità della catena, tema scuro](docs/screenshots/09-catena-tema-scuro.png)
+
+Gli screenshot si rigenerano con `npm run screenshots` su dati di esempio; [crediti delle foto](docs/screenshots/CREDITI.md).
 
 ## Documentazione
 
