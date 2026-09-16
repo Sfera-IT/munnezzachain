@@ -11,6 +11,8 @@ export function createMap(el: HTMLElement, center: [number, number] = [42.5, 12.
   const map = L.map(el, { center, zoom, scrollWheelZoom: true });
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
+    // OSM's tile policy rejects requests without a Referer; send only the origin, never the page path.
+    referrerPolicy: "strict-origin-when-cross-origin",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(map);
   // Maps created inside a view that is not yet laid out need a size recompute.
