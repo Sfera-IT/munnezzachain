@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { canonicalJson, sha256Hex } from "../src/shared/bytes.ts";
 import { chainPreimage, entryHash, GENESIS_HASH, computePhotoFlags } from "../src/shared/model.ts";
 import { buildTimeStampRequest, inspectTimeStampResponse } from "../src/worker/tsa.ts";
-import { buildZip, crc32 } from "../src/worker/zip.ts";
+import { buildZip, crc32, streamZip } from "../src/worker/zip.ts";
 import { hashPassword, verifyPassword } from "../src/shared/password.ts";
 
 describe("canonical JSON", () => {
@@ -53,6 +53,20 @@ describe("zip", () => {
     expect(dv.getUint16(end + 10, true)).toBe(2);
     const cdOffset = dv.getUint32(end + 16, true);
     expect(dv.getUint32(cdOffset, true)).toBe(0x02014b50);
+  });
+  it("streams the same bytes it would build, loading each entry only when it is written", async () => {
+    const entries = [
+      { name: "a.txt", data: new TextEncoder().encode("ciao"), date: new Date("2026-09-16T10:00:00Z") },
+      { name: "b/ç.bin", data: new Uint8Array([1, 2, 3]), date: new Date("2026-09-16T10:00:00Z") },
+    ];
+    const loaded: string[] = [];
+    const stream = streamZip(entries.map((e) => ({ name: e.name, date: e.date, load: async () => (loaded.push(e.name), e.data) })));
+    const reader = stream.getReader();
+    const first = await reader.read();
+    expect(loaded).toEqual(["a.txt"]);
+    const chunks = [first.value!];
+    for (let r = await reader.read(); !r.done; r = await reader.read()) chunks.push(r.value);
+    expect(Buffer.concat(chunks)).toEqual(Buffer.from(buildZip(entries)));
   });
 });
 

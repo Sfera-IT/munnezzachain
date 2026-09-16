@@ -72,7 +72,8 @@ export async function timestampLink(env: Env, row: Pick<ChainRow, "seq" | "repor
       row.entry_hash,
     );
     if (result.granted && response) {
-      key = `tsa/${row.report_id}.tsr`;
+      // One key per attempt: tsa/ is under a retention lock, which refuses to overwrite an earlier token.
+      key = `tsa/${row.report_id}-${Date.now()}.tsr`;
       await env.EVIDENCE.put(key, response, {
         httpMetadata: { contentType: "application/timestamp-reply" },
         customMetadata: { entryHash: row.entry_hash, seq: String(row.seq) },
@@ -83,17 +84,28 @@ export async function timestampLink(env: Env, row: Pick<ChainRow, "seq" | "repor
       error = result.error ?? "richiesta non accolta";
     }
   } catch (e) {
+    key = null;
+    status = "error";
     error = `TSA non raggiungibile: ${(e as Error).message}`;
   }
-  await env.DB.prepare("UPDATE chain SET tsa_status = ?, tsa_key = ?, tsa_gen_time = ?, tsa_error = ?, tsa_attempts = ? WHERE seq = ?")
-    .bind(status, key, genTime, error, row.tsa_attempts + 1, row.seq)
+  // A token already recorded by a concurrent attempt is never replaced, least of all by a failure.
+  await env.DB.prepare(
+    "UPDATE chain SET tsa_status = ?, tsa_key = ?, tsa_gen_time = ?, tsa_error = ?, tsa_attempts = tsa_attempts + 1 WHERE seq = ? AND tsa_status <> 'granted'",
+  )
+    .bind(status, key, genTime, error, row.seq)
     .run();
 }
 
+/** Links younger than this are still being timestamped by the request that created them. */
+const TSA_GRACE_MS = 5 * 60_000;
+
 export async function retryPendingTimestamps(env: Env): Promise<number> {
   const { results } = await env.DB.prepare(
-    "SELECT * FROM chain WHERE tsa_status IN ('pending', 'error') AND tsa_attempts < 50 ORDER BY seq LIMIT 25",
-  ).all<ChainRow>();
+    `SELECT * FROM chain WHERE tsa_attempts < 50 AND (tsa_status = 'error' OR (tsa_status = 'pending' AND received_at < ?))
+     ORDER BY seq LIMIT 10`,
+  )
+    .bind(new Date(Date.now() - TSA_GRACE_MS).toISOString())
+    .all<ChainRow>();
   for (const row of results) await timestampLink(env, row);
   return results.length;
 }
@@ -104,15 +116,30 @@ export interface ChainProblem {
   problem: string;
 }
 
-/** Recomputes every link; with `deep`, also re-hashes each stored manifest and original photo. */
-export async function verifyChain(env: Env, deep: boolean): Promise<{ ok: boolean; length: number; head: string; problems: ChainProblem[] }> {
+/** A deep check reads every file of a report: batches keep one request within the Worker's CPU and subrequest limits. */
+export const DEEP_BATCH = 25;
+
+/**
+ * Recomputes links from `from` on; with `deep`, also re-hashes each stored manifest and original photo, and stops
+ * after DEEP_BATCH links. `next` is where the following batch starts, or null when the chain has been covered.
+ */
+export async function verifyChain(
+  env: Env,
+  deep: boolean,
+  from = 1,
+): Promise<{ ok: boolean; from: number; length: number; head: string; problems: ChainProblem[]; next: number | null }> {
   const problems: ChainProblem[] = [];
   let prev = GENESIS_HASH;
-  let expectedSeq = 1;
+  if (from > 1) {
+    const before = await env.DB.prepare("SELECT entry_hash FROM chain WHERE seq = ?").bind(from - 1).first<{ entry_hash: string }>();
+    if (!before) return { ok: false, from, length: 0, head: prev, problems: [{ seq: from - 1, reportId: "", problem: "anello mancante" }], next: null };
+    prev = before.entry_hash;
+  }
+  let expectedSeq = from;
   let length = 0;
-  const pageSize = 500;
-  for (let from = 0; ; from += pageSize) {
-    const { results } = await env.DB.prepare("SELECT * FROM chain ORDER BY seq LIMIT ? OFFSET ?").bind(pageSize, from).all<ChainRow>();
+  const pageSize = deep ? DEEP_BATCH : 500;
+  for (let offset = 0; ; offset += pageSize) {
+    const { results } = await env.DB.prepare("SELECT * FROM chain WHERE seq >= ? ORDER BY seq LIMIT ? OFFSET ?").bind(from, pageSize, offset).all<ChainRow>();
     for (const row of results) {
       length++;
       const p = (problem: string) => problems.push({ seq: row.seq, reportId: row.report_id, problem });
@@ -143,7 +170,8 @@ export async function verifyChain(env: Env, deep: boolean): Promise<{ ok: boolea
       prev = row.entry_hash;
       expectedSeq = row.seq + 1;
     }
+    if (deep) return { ok: problems.length === 0, from, length, head: prev, problems, next: results.length < pageSize ? null : expectedSeq };
     if (results.length < pageSize) break;
   }
-  return { ok: problems.length === 0, length, head: prev, problems };
+  return { ok: problems.length === 0, from, length, head: prev, problems, next: null };
 }

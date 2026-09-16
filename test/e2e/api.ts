@@ -206,7 +206,7 @@ export async function runApiTests(base: string, adminLogin: string, adminPasswor
 
   section("API: catena ed export");
   const chain = (await admin.json("/api/export/catena/verifica?completa=1")).data;
-  ok(chain.ok && chain.length === 3, `catena integra, verifica completa su ${chain.length} anelli`);
+  ok(chain.ok && chain.length === 3 && chain.next === null, `catena integra, verifica completa su ${chain.length} anelli`);
   const head = (await pub.json("/api/verifica/testa")).data;
   ok(head.length === 3 && head.head === chain.head, "la testa pubblica coincide con la verifica interna");
 
@@ -214,6 +214,29 @@ export async function runApiTests(base: string, adminLogin: string, adminPasswor
   ok(geo.features.length === 2 && geo.features.every((f: Json) => f.properties.id !== second.data.reportId), "il GeoJSON contiene solo le accettate");
   const csv = await (await ranger.call("/api/export/segnalazioni.csv")).text();
   ok(csv.includes("'=HYPERLINK") && !/;=HYPERLINK/.test(csv), "il CSV neutralizza le formule dei fogli di calcolo");
+
+  section("API: robustezza");
+  {
+    const race = await submit(pub, "gara", { description: "accettazione e rifiuto insieme" });
+    const [acc, rej] = await Promise.all([
+      admin.json(`/api/segnalazioni/${race.data.reportId}/moderazione`, { method: "POST", json: { decision: "accetta" } }),
+      admin.json(`/api/segnalazioni/${race.data.reportId}/moderazione`, { method: "POST", json: { decision: "rifiuta", reason: "altro" } }),
+    ]);
+    ok([acc.status, rej.status].sort().join() === "200,409", `accettazione e rifiuto contemporanei: vince uno solo (${acc.status}, ${rej.status})`);
+    const after = (await admin.json(`/api/segnalazioni/${race.data.reportId}`)).data;
+    const photo = await admin.call(`/api/segnalazioni/${race.data.reportId}/photos/0/originale`);
+    ok(
+      acc.status === 200 ? after.report.moderation === "accettata" && photo.status === 200 : after.report.moderation === "rifiutata" && photo.status === 404,
+      "lo stato finale è coerente con la decisione che ha vinto",
+    );
+  }
+  ok((await admin.json("/api/utenti", { method: "POST", body: "{non json", headers: { "content-type": "application/json" } })).status === 400, "un corpo JSON malformato è un errore 400, non 500");
+  {
+    // Locally wrangler buffers the body before the Worker runs; in production the header is checked first.
+    const oversize = new Uint8Array(62 * 1024 * 1024);
+    const res = await pub.call("/api/segnalazioni", { method: "POST", body: oversize, headers: { "content-type": "multipart/form-data; boundary=x" } });
+    ok(res.status === 413, `una segnalazione oltre il limite di dimensione è rifiutata senza leggerla (${res.status})`);
+  }
 
   section("API: utenti");
   const users = (await admin.json("/api/utenti")).data.users as Json[];

@@ -5,7 +5,7 @@ import { HTTPException } from "hono/http-exception";
 import { sha256Hex, toHex } from "../shared/bytes.ts";
 import { hashPassword, verifyPassword } from "../shared/password.ts";
 import type { AppEnv, SessionUser } from "./env.ts";
-import { audit, clientIp } from "./util.ts";
+import { audit, clientIp, readJson } from "./util.ts";
 
 const COOKIE = "mc_session";
 const SESSION_DAYS = 30;
@@ -19,6 +19,10 @@ interface UserRow {
   active: number;
   must_change_password: number;
 }
+
+// Unknown and disabled accounts still pay for a PBKDF2 run, so response time does not reveal which emails exist.
+let dummyHash: Promise<string> | undefined;
+const timingDecoy = () => (dummyHash ??= hashPassword("munnezzachain-timing-decoy"));
 
 const toSessionUser = (r: UserRow): SessionUser => ({
   id: r.id,
@@ -67,9 +71,10 @@ auth.post("/login", async (c) => {
   const email = String(body.email ?? "").trim();
   const password = String(body.password ?? "");
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first<UserRow>();
-  const ok = row && row.active === 1 && (await verifyPassword(password, row.password_hash));
-  if (!row || !ok) {
-    await audit(c.env, { action: "login_fallito", detail: { email } });
+  const passwordOk = await verifyPassword(password, row?.password_hash ?? (await timingDecoy()));
+  if (!row || row.active !== 1 || !passwordOk) {
+    // Whatever an attacker types as email is not kept: the append-only log would hold it forever.
+    await audit(c.env, { userId: row?.id, action: "login_fallito", detail: row ? null : { utente: "sconosciuto" } });
     return c.json({ error: "Email o password non corretti" }, 401);
   }
 
@@ -95,8 +100,8 @@ auth.get("/me", (c) => c.json({ user: c.get("user") }));
 
 auth.post("/password", async (c) => {
   const user = requireUser(c);
-  const { current, next } = await c.req.json<{ current?: string; next?: string }>();
-  if (!next || next.length < 12) return c.json({ error: "La nuova password deve avere almeno 12 caratteri" }, 400);
+  const { current, next } = await readJson<{ current: string; next: string }>(c);
+  if (typeof next !== "string" || next.length < 12) return c.json({ error: "La nuova password deve avere almeno 12 caratteri" }, 400);
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first<UserRow>();
   if (!row || !(await verifyPassword(String(current ?? ""), row.password_hash))) {
     return c.json({ error: "La password attuale non è corretta" }, 400);

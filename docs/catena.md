@@ -51,7 +51,7 @@ Per FreeTSA i certificati sono su https://freetsa.org/files/cacert.pem e https:/
 
 ## 5. Moderazione
 
-Le segnalazioni del pubblico restano in quarantena. Se accettate, i file passano sotto prefissi di R2 protetti da blocco di conservazione. Se rifiutate, file, testo e posizione vengono distrutti, ma l'anello resta: la catena continua a verificarsi, e il manifest rifiutato risulta "contenuto rimosso".
+Le segnalazioni del pubblico restano in quarantena. Se accettate, la decisione viene registrata per prima e solo dopo i file passano sotto prefissi di R2 protetti da blocco di conservazione: un rifiuto concorrente non può lasciare copie non cancellabili. Uno spostamento interrotto viene completato dal cron, che rimuove anche i file di invii mai arrivati nel database. Se rifiutate, file, testo e posizione vengono distrutti, ma l'anello resta: la catena continua a verificarsi, e il manifest rifiutato risulta "contenuto rimosso".
 
 ## 6. Copie con GPS
 

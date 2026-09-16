@@ -12,6 +12,11 @@ export const CATEGORIES = {
 } as const;
 export type Category = keyof typeof CATEGORIES;
 
+export const MAX_PHOTOS = 10;
+export const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
+/** All photos of one report together. A Worker isolate has 128 MB and holds the whole upload in memory. */
+export const MAX_REPORT_BYTES = 60 * 1024 * 1024;
+
 export const STATUSES = {
   nuova: "Nuova",
   in_verifica: "In verifica",

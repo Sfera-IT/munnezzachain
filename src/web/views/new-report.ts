@@ -1,5 +1,5 @@
 import type * as Leaflet from "leaflet";
-import { CATEGORIES, type Category, type PhotoMeta, type SubmitMeta } from "../../shared/model.ts";
+import { CATEGORIES, MAX_PHOTOS, MAX_PHOTO_BYTES, MAX_REPORT_BYTES, type Category, type PhotoMeta, type SubmitMeta } from "../../shared/model.ts";
 import { h, replace, toast, fmtBytes } from "../dom.ts";
 import { isOperator, session } from "../api.ts";
 import { LocationTracker, openCamera, pickFiles, fromFile, supportsInAppCamera, type CapturedPhoto } from "../capture.ts";
@@ -7,8 +7,6 @@ import { outbox, persistStorage } from "../store.ts";
 import { send } from "../sender.ts";
 import { appState } from "../app-state.ts";
 import { navigate } from "../router.ts";
-
-const MAX_PHOTOS = 10;
 
 const ORIGIN_LABEL = {
   in_app_camera: "Scattata nell'app",
@@ -107,6 +105,15 @@ export function newReportView() {
     if (photos.length >= MAX_PHOTOS) return;
     if (photos.some((x) => x.sha256 === p.sha256)) {
       toast("Questa foto è già stata aggiunta", "error");
+      return;
+    }
+    // The server refuses these anyway; saying so now keeps an unsendable report out of the outbox.
+    if (p.size > MAX_PHOTO_BYTES) {
+      toast(`La foto supera i ${MAX_PHOTO_BYTES / 1048576} MB`, "error");
+      return;
+    }
+    if (photos.reduce((n, x) => n + x.size, p.size) > MAX_REPORT_BYTES) {
+      toast(`Spazio esaurito: una segnalazione può contenere al massimo ${MAX_REPORT_BYTES / 1048576} MB di foto. Inviala e aprine un'altra.`, "error");
       return;
     }
     photos.push(p);

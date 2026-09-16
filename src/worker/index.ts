@@ -6,6 +6,7 @@ import { submit } from "./submit.ts";
 import { reports, exportsApi, verify, REJECTION_REASONS } from "./reports.ts";
 import { users } from "./users.ts";
 import { retryPendingTimestamps } from "./chain.ts";
+import { sweepQuarantine } from "./storage.ts";
 
 const app = new Hono<AppEnv>().basePath("/api");
 
@@ -18,6 +19,7 @@ app.use("*", async (c, next) => {
   await next();
   c.header("cache-control", c.res.headers.get("cache-control") ?? "no-store");
   c.header("x-content-type-options", "nosniff");
+  if (new URL(c.req.url).protocol === "https:") c.header("strict-transport-security", "max-age=31536000");
   if (c.env.APP_VERSION) c.header("x-app-version", c.env.APP_VERSION);
 });
 
@@ -52,6 +54,7 @@ export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(retryPendingTimestamps(env));
+    ctx.waitUntil(sweepQuarantine(env));
     ctx.waitUntil(env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(new Date().toISOString()).run());
   },
 } satisfies ExportedHandler<Env>;

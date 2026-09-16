@@ -60,6 +60,21 @@ describe("evidence is append-only in the database", () => {
     expect(() => db.exec("UPDATE reports SET moderation = 'rifiutata', description = ''")).toThrow();
   });
 
+  it("aborts a rejection that races an acceptance committed first", () => {
+    seed("in_attesa");
+    db.exec("UPDATE reports SET moderation = 'accettata' WHERE moderation = 'in_attesa'");
+    // The rejection batch starts with the photos: the trigger refuses once the report is no longer pending.
+    expect(() => db.exec("UPDATE photos SET removed = 1, exif_json = NULL WHERE report_id = 'R1'")).toThrow(/non si modificano/);
+    expect(db.prepare("SELECT removed FROM photos").get()).toMatchObject({ removed: 0 });
+  });
+
+  it("lets an accepted report's files move to the archive", () => {
+    seed("accettata");
+    db.exec("UPDATE photos SET original_key = 'originals/R1/1.jpg', derived_key = NULL");
+    db.exec("UPDATE reports SET manifest_key = 'manifests/R1.json'");
+    expect(db.prepare("SELECT manifest_key FROM reports").get()).toMatchObject({ manifest_key: "manifests/R1.json" });
+  });
+
   it("makes a moderation decision final", () => {
     seed("in_attesa");
     db.exec("UPDATE reports SET moderation = 'accettata'");

@@ -5,6 +5,9 @@ import { readExif, buildExifSegment, replaceExif } from "../shared/exif.ts";
 import type { ExifInfo } from "../shared/exif.ts";
 import {
   CATEGORIES,
+  MAX_PHOTOS,
+  MAX_PHOTO_BYTES,
+  MAX_REPORT_BYTES,
   computePhotoFlags,
   manifestBytes,
   type CaptureOrigin,
@@ -19,9 +22,6 @@ import type { AppEnv, Env } from "./env.ts";
 import { appendToChain, timestampLink, type ChainRow } from "./chain.ts";
 import { audit, clientIp, newReportId } from "./util.ts";
 import { storageKeys } from "./storage.ts";
-
-export const MAX_PHOTOS = 10;
-export const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
 
 class Invalid extends Error {}
 
@@ -88,6 +88,9 @@ export function validateMeta(raw: unknown): SubmitMeta {
     if (location) photo.location = location;
     return photo;
   });
+  if (photos.reduce((n, p) => n + p.size, 0) > MAX_REPORT_BYTES) {
+    throw new Invalid(`le foto insieme superano i ${MAX_REPORT_BYTES / 1048576} MB: dividile in più segnalazioni`);
+  }
   const meta: SubmitMeta = {
     clientReportId: m.clientReportId,
     category: m.category as SubmitMeta["category"],
@@ -142,6 +145,11 @@ submit.post("/", async (c) => {
   if (!operator) {
     const { success } = await c.env.PUBLIC_SUBMIT_LIMITER.limit({ key: clientIp(c) });
     if (!success) return c.json({ error: "Troppe segnalazioni in poco tempo. Riprova tra un minuto." }, 429);
+  }
+
+  // Refused before the body is read: parsing it is what would exhaust the isolate's memory.
+  if (Number(c.req.header("content-length") ?? 0) > MAX_REPORT_BYTES + 1024 * 1024) {
+    return c.json({ error: `Segnalazione troppo grande: al massimo ${MAX_REPORT_BYTES / 1048576} MB di foto` }, 413);
   }
 
   let form: FormData;

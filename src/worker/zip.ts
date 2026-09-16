@@ -22,14 +22,22 @@ export interface ZipEntry {
   date?: Date;
 }
 
-export function buildZip(entries: ZipEntry[]): Uint8Array {
-  const enc = new TextEncoder();
-  const locals: Uint8Array[] = [];
-  const centrals: Uint8Array[] = [];
-  let offset = 0;
+/** An entry whose bytes are only loaded when it is its turn to be written. */
+export interface LazyZipEntry {
+  name: string;
+  date?: Date;
+  load: () => Promise<Uint8Array>;
+}
 
-  for (const e of entries) {
-    const name = enc.encode(e.name);
+class ZipWriter {
+  private enc = new TextEncoder();
+  private centrals: Uint8Array[] = [];
+  private offset = 0;
+  private count = 0;
+
+  /** Returns the local header followed by the data. */
+  entry(e: ZipEntry): Uint8Array[] {
+    const name = this.enc.encode(e.name);
     const d = e.date ?? new Date();
     const time = (d.getUTCHours() << 11) | (d.getUTCMinutes() << 5) | (d.getUTCSeconds() >> 1);
     const date = ((d.getUTCFullYear() - 1980) << 9) | ((d.getUTCMonth() + 1) << 5) | d.getUTCDate();
@@ -62,28 +70,57 @@ export function buildZip(entries: ZipEntry[]): Uint8Array {
     cv.setUint32(20, e.data.length, true);
     cv.setUint32(24, e.data.length, true);
     cv.setUint16(28, name.length, true);
-    cv.setUint32(42, offset, true);
+    cv.setUint32(42, this.offset, true);
     central.set(name, 46);
 
-    locals.push(local, e.data);
-    centrals.push(central);
-    offset += local.length + e.data.length;
+    this.centrals.push(central);
+    this.offset += local.length + e.data.length;
+    this.count++;
+    return [local, e.data];
   }
 
-  const centralSize = centrals.reduce((n, c) => n + c.length, 0);
-  const end = new Uint8Array(22);
-  const ev = new DataView(end.buffer);
-  ev.setUint32(0, 0x06054b50, true);
-  ev.setUint16(8, entries.length, true);
-  ev.setUint16(10, entries.length, true);
-  ev.setUint32(12, centralSize, true);
-  ev.setUint32(16, offset, true);
+  /** Returns the central directory and the end record. */
+  finish(): Uint8Array[] {
+    const centralSize = this.centrals.reduce((n, c) => n + c.length, 0);
+    const end = new Uint8Array(22);
+    const ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(8, this.count, true);
+    ev.setUint16(10, this.count, true);
+    ev.setUint32(12, centralSize, true);
+    ev.setUint32(16, this.offset, true);
+    return [...this.centrals, end];
+  }
+}
 
-  const out = new Uint8Array(offset + centralSize + end.length);
+export function buildZip(entries: ZipEntry[]): Uint8Array {
+  const zip = new ZipWriter();
+  const parts = [...entries.flatMap((e) => zip.entry(e)), ...zip.finish()];
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
-  for (const part of [...locals, ...centrals, end]) {
+  for (const part of parts) {
     out.set(part, at);
     at += part.length;
   }
   return out;
+}
+
+/**
+ * Streams a ZIP holding one entry in memory at a time: an evidence package with ten full-resolution photos and
+ * their GPS copies would not fit in a Worker isolate if it were assembled whole.
+ */
+export function streamZip(entries: LazyZipEntry[]): ReadableStream<Uint8Array> {
+  const zip = new ZipWriter();
+  let next = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (next === entries.length) {
+        for (const part of zip.finish()) controller.enqueue(part);
+        controller.close();
+        return;
+      }
+      const e = entries[next++]!;
+      for (const part of zip.entry({ name: e.name, date: e.date, data: await e.load() })) controller.enqueue(part);
+    },
+  });
 }

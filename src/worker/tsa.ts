@@ -122,7 +122,7 @@ export async function requestTimestamp(cfg: TsaConfig, digestHex: string): Promi
   const nonce = crypto.getRandomValues(new Uint8Array(8));
   const headers: Record<string, string> = { "content-type": "application/timestamp-query" };
   if (cfg.username) headers.authorization = `Basic ${btoa(`${cfg.username}:${cfg.password ?? ""}`)}`;
-  const res = await fetch(cfg.url, { method: "POST", headers, body: buildTimeStampRequest(digestHex, nonce) });
+  const res = await fetch(cfg.url, { method: "POST", headers, body: buildTimeStampRequest(digestHex, nonce), signal: AbortSignal.timeout(15_000) });
   if (!res.ok) return { result: { granted: false, status: -1, error: `HTTP ${res.status} dalla TSA` } };
   const response = new Uint8Array(await res.arrayBuffer());
   return { result: inspectTimeStampResponse(response, digestHex, nonce), response };

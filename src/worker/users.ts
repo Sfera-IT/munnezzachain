@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { generatePassword, hashPassword } from "../shared/password.ts";
 import type { AppEnv } from "./env.ts";
 import { requireActiveOperator } from "./auth.ts";
-import { audit } from "./util.ts";
+import { audit, readJson } from "./util.ts";
 
 export const users = new Hono<AppEnv>();
 
@@ -18,7 +18,7 @@ users.get("/", async (c) => {
 
 users.post("/", async (c) => {
   const admin = requireActiveOperator(c, "admin");
-  const body = await c.req.json<{ email?: string; name?: string; role?: string }>();
+  const body = await readJson<{ email: string; name: string; role: string }>(c);
   const email = String(body.email ?? "").trim().toLowerCase();
   const name = String(body.name ?? "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return c.json({ error: "Email non valida" }, 400);
@@ -44,7 +44,7 @@ users.post("/", async (c) => {
 users.patch("/:id", async (c) => {
   const admin = requireActiveOperator(c, "admin");
   const id = c.req.param("id");
-  const body = await c.req.json<{ active?: boolean; role?: string; resetPassword?: boolean }>();
+  const body = await readJson<{ active: boolean; role: string; resetPassword: boolean }>(c);
   if (id === admin.id && (body.active === false || (body.role && body.role !== "admin"))) {
     return c.json({ error: "Non puoi disattivare o declassare il tuo stesso account" }, 400);
   }

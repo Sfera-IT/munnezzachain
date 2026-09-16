@@ -1,7 +1,15 @@
 import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import type { AppEnv, Env } from "./env.ts";
 
 export const clientIp = (c: Context<AppEnv>) => c.req.header("cf-connecting-ip") ?? "sconosciuto";
+
+/** A malformed or missing JSON body is the client's error (400), not a crash (500). */
+export async function readJson<T extends object>(c: Context<AppEnv>): Promise<Partial<T>> {
+  const body: unknown = await c.req.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new HTTPException(400, { message: "Richiesta non leggibile" });
+  return body as Partial<T>;
+}
 
 export async function audit(
   env: Env,
@@ -13,7 +21,7 @@ export async function audit(
       entry.userId ?? null,
       entry.action,
       entry.reportId ?? null,
-      entry.detail === undefined ? null : JSON.stringify(entry.detail),
+      entry.detail == null ? null : JSON.stringify(entry.detail),
     )
     .run();
 }

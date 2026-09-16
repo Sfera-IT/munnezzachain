@@ -173,9 +173,17 @@ export async function chainView() {
   const run = async (deep: boolean) => {
     replace(out, h("p", { class: "muted" }, deep ? "Ricalcolo catena, manifest e foto: può richiedere tempo…" : "Ricalcolo la catena…"));
     try {
-      const r = await api<{ ok: boolean; length: number; head: string; problems: { seq: number; reportId: string; problem: string }[] }>(
-        `/export/catena/verifica${deep ? "?completa=1" : ""}`,
-      );
+      type Batch = { ok: boolean; length: number; head: string; problems: { seq: number; reportId: string; problem: string }[]; next: number | null };
+      // A deep check comes back in batches: each request re-hashes a bounded number of files.
+      const r: Batch = { ok: true, length: 0, head: "", problems: [], next: 1 };
+      while (r.next !== null) {
+        const b = await api<Batch>(`/export/catena/verifica${deep ? `?completa=1&da=${r.next}` : ""}`);
+        r.length += b.length;
+        r.problems.push(...b.problems);
+        r.ok &&= b.ok;
+        r.next = b.next;
+        if (b.next !== null) replace(out, h("p", { class: "muted" }, `Ricalcolo catena, manifest e foto: ${r.length} anelli verificati…`));
+      }
       replace(
         out,
         h(

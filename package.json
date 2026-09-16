@@ -10,7 +10,7 @@
     "db:migrate:local": "wrangler d1 migrations apply munnezzachain --local",
     "db:migrate:remote": "wrangler d1 migrations apply munnezzachain --remote",
     "create-admin": "node scripts/create-admin.ts",
-    "deploy": "npm run typecheck && npm test && node scripts/build-web.ts && wrangler deploy --var APP_VERSION:$(cat .app-version)",
+    "deploy": "git diff --quiet HEAD || { echo 'Modifiche non committate: fai commit prima di pubblicare' >&2; exit 1; }; npm run typecheck && npm test && node scripts/build-web.ts && wrangler deploy --var APP_VERSION:$(cat .app-version)",
     "icons": "node scripts/make-icons.ts",
     "test:e2e": "node test/e2e/run.ts",
     "test:all": "npm run typecheck && npm test && npm run test:e2e",

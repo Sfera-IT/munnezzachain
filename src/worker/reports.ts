@@ -6,10 +6,10 @@ import { isSha256Hex } from "../shared/bytes.ts";
 import type { ExifInfo } from "../shared/exif.ts";
 import type { AppEnv, Env, SessionUser } from "./env.ts";
 import { requireActiveOperator } from "./auth.ts";
-import { audit } from "./util.ts";
-import { storageKeys, QUARANTINE_PREFIX } from "./storage.ts";
+import { audit, readJson } from "./util.ts";
+import { moveToArchive, purgeQuarantine } from "./storage.ts";
 import { verifyChain, type ChainRow } from "./chain.ts";
-import { buildZip, type ZipEntry } from "./zip.ts";
+import { streamZip, type LazyZipEntry } from "./zip.ts";
 
 export interface ReportRow {
   id: string;
@@ -206,9 +206,9 @@ reports.patch("/:id", async (c) => {
   const user = requireActiveOperator(c);
   const r = await loadReport(c, c.req.param("id"), user);
   if (r.moderation !== "accettata") return c.json({ error: "Prima va completata la moderazione" }, 409);
-  const body = await c.req.json<{ status?: string; note?: string }>();
-  if (!body.status || !(body.status in STATUSES)) return c.json({ error: "Stato non valido" }, 400);
-  const note = (body.note ?? "").trim().slice(0, 2000) || null;
+  const body = await readJson<{ status: string; note: string }>(c);
+  if (typeof body.status !== "string" || !(body.status in STATUSES)) return c.json({ error: "Stato non valido" }, 400);
+  const note = String(body.note ?? "").trim().slice(0, 2000) || null;
   const now = new Date().toISOString();
   await c.env.DB.prepare("UPDATE reports SET status = ?, status_note = ?, status_updated_at = ?, status_updated_by = ? WHERE id = ?")
     .bind(body.status, note, now, user.id, r.id)
@@ -217,91 +217,67 @@ reports.patch("/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+const ALREADY_MODERATED = { error: "Questa segnalazione è già stata moderata" };
+
 reports.post("/:id/moderazione", async (c) => {
   const user = requireActiveOperator(c, "admin");
   const r = await loadReport(c, c.req.param("id"), user);
-  if (r.moderation !== "in_attesa") return c.json({ error: "Questa segnalazione è già stata moderata" }, 409);
-  const body = await c.req.json<{ decision?: "accetta" | "rifiuta"; reason?: string; note?: string }>();
-  const { results: photos } = await c.env.DB.prepare("SELECT * FROM photos WHERE report_id = ? ORDER BY idx").bind(r.id).all<PhotoRow>();
+  if (r.moderation !== "in_attesa") return c.json(ALREADY_MODERATED, 409);
+  const body = await readJson<{ decision: "accetta" | "rifiuta"; reason: string; note: string }>(c);
+  const note = typeof body.note === "string" ? body.note.slice(0, 500) : null;
   const now = new Date().toISOString();
 
   if (body.decision === "accetta") {
-    const keys = storageKeys(r.id, true);
-    const updates: D1PreparedStatement[] = [];
-    // Copy into the locked prefixes first; only once D1 points at the new keys is quarantine emptied.
-    for (const p of photos) {
-      const ext = p.original_key.split(".").pop()!;
-      const originalKey = keys.original(p.idx, p.sha256, ext);
-      await copyObject(c.env, p.original_key, originalKey, p.sha256);
-      let derivedKey: string | null = null;
-      if (p.derived_key) {
-        derivedKey = keys.derived(p.idx);
-        await copyObject(c.env, p.derived_key, derivedKey, p.derived_sha256!);
-      }
-      updates.push(
-        c.env.DB.prepare("UPDATE photos SET original_key = ?, derived_key = ? WHERE report_id = ? AND idx = ?").bind(originalKey, derivedKey, r.id, p.idx),
-      );
+    // The decision is committed before any file is copied into the locked archive. Whoever commits first wins,
+    // so a concurrent rejection can never leave copies of content it destroyed under a retention lock.
+    const claim = await c.env.DB.prepare(
+      "UPDATE reports SET moderation = 'accettata', moderated_at = ?, moderated_by = ? WHERE id = ? AND moderation = 'in_attesa'",
+    )
+      .bind(now, user.id, r.id)
+      .run();
+    if (!claim.meta.changes) return c.json(ALREADY_MODERATED, 409);
+    await audit(c.env, { userId: user.id, action: "moderazione_accettata", reportId: r.id, detail: note ? { nota: note } : null });
+    try {
+      await moveToArchive(c.env, r.id);
+    } catch (e) {
+      // Accepted all the same: files stay readable in quarantine and the cron sweep completes the move.
+      console.error(`archiviazione ${r.id}`, e);
     }
-    await copyObject(c.env, r.manifest_key, keys.manifest, r.manifest_sha256);
-    updates.push(
-      c.env.DB.prepare("UPDATE reports SET manifest_key = ?, moderation = 'accettata', moderated_at = ?, moderated_by = ? WHERE id = ?").bind(
-        keys.manifest,
-        now,
-        user.id,
-        r.id,
-      ),
-    );
-    await c.env.DB.batch(updates);
-    await purgeQuarantine(c.env, r.id);
-    await audit(c.env, { userId: user.id, action: "moderazione_accettata", reportId: r.id, detail: { nota: body.note ?? null } });
     return c.json({ ok: true, moderation: "accettata" });
   }
 
   if (body.decision === "rifiuta") {
-    if (!body.reason || !(body.reason in REJECTION_REASONS)) return c.json({ error: "Indica il motivo del rifiuto" }, 400);
-    // Photos first: their trigger only permits removal while the report is still awaiting moderation.
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        `UPDATE photos SET removed = 1, exif_json = NULL, lat = NULL, lon = NULL, accuracy = NULL, location_source = NULL, derived_key = NULL
-         WHERE report_id = ?`,
-      ).bind(r.id),
-      c.env.DB.prepare(
-        `UPDATE reports SET moderation = 'rifiutata', moderated_at = ?, moderated_by = ?, rejection_reason = ?,
-           description = '', contact = NULL, lat = NULL, lon = NULL, location_source = NULL, user_agent = NULL
-         WHERE id = ?`,
-      ).bind(now, user.id, body.reason, r.id),
-    ]);
-    await purgeQuarantine(c.env, r.id);
-    await audit(c.env, { userId: user.id, action: "moderazione_rifiutata", reportId: r.id, detail: { motivo: body.reason, nota: body.note ?? null } });
+    if (typeof body.reason !== "string" || !(body.reason in REJECTION_REASONS)) return c.json({ error: "Indica il motivo del rifiuto" }, 400);
+    try {
+      // Photos first: their trigger only permits removal while the report is still awaiting moderation, so this
+      // batch aborts if an acceptance committed in the meantime.
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          `UPDATE photos SET removed = 1, exif_json = NULL, lat = NULL, lon = NULL, accuracy = NULL, location_source = NULL, derived_key = NULL
+           WHERE report_id = ?`,
+        ).bind(r.id),
+        c.env.DB.prepare(
+          `UPDATE reports SET moderation = 'rifiutata', moderated_at = ?, moderated_by = ?, rejection_reason = ?,
+             description = '', contact = NULL, lat = NULL, lon = NULL, location_source = NULL, user_agent = NULL, country = NULL
+           WHERE id = ? AND moderation = 'in_attesa'`,
+        ).bind(now, user.id, body.reason, r.id),
+      ]);
+    } catch (e) {
+      const current = await c.env.DB.prepare("SELECT moderation FROM reports WHERE id = ?").bind(r.id).first<{ moderation: string }>();
+      if (current?.moderation !== "in_attesa") return c.json(ALREADY_MODERATED, 409);
+      throw e;
+    }
+    await audit(c.env, { userId: user.id, action: "moderazione_rifiutata", reportId: r.id, detail: { motivo: body.reason, nota: note } });
+    try {
+      await purgeQuarantine(c.env, r.id);
+    } catch (e) {
+      console.error(`rimozione quarantena ${r.id}`, e);
+    }
     return c.json({ ok: true, moderation: "rifiutata" });
   }
 
   return c.json({ error: "Decisione non valida" }, 400);
 });
-
-async function copyObject(env: Env, from: string, to: string, sha256: string) {
-  const src = await env.EVIDENCE.get(from);
-  if (!src) {
-    // A retried acceptance may already have moved it.
-    if (await env.EVIDENCE.head(to)) return;
-    throw new Error(`oggetto mancante in quarantena: ${from}`);
-  }
-  await env.EVIDENCE.put(to, await src.arrayBuffer(), {
-    sha256,
-    httpMetadata: src.httpMetadata,
-    customMetadata: src.customMetadata,
-  });
-}
-
-async function purgeQuarantine(env: Env, reportId: string) {
-  const prefix = `${QUARANTINE_PREFIX}${reportId}/`;
-  let cursor: string | undefined;
-  do {
-    const list = await env.EVIDENCE.list({ prefix, cursor });
-    if (list.objects.length) await env.EVIDENCE.delete(list.objects.map((o) => o.key));
-    cursor = list.truncated ? list.cursor : undefined;
-  } while (cursor);
-}
 
 // ---------------------------------------------------------------------------------------------
 // Evidence package
@@ -317,29 +293,29 @@ reports.get("/:id/pacchetto.zip", async (c) => {
   if (!chain) throw new Error("voce di catena mancante");
   const prev = await c.env.DB.prepare("SELECT seq, entry_hash, report_id FROM chain WHERE seq = ?").bind(chain.seq - 1).first();
 
-  const entries: ZipEntry[] = [];
+  const entries: LazyZipEntry[] = [];
   const sums: string[] = [];
   const date = new Date(r.received_at);
-  const add = (name: string, data: Uint8Array, sha?: string) => {
-    entries.push({ name, data, date });
+  const enc = new TextEncoder();
+  const add = (name: string, load: () => Promise<Uint8Array>, sha?: string) => {
+    entries.push({ name, date, load });
     if (sha) sums.push(`${sha}  ${name}`);
   };
+  // Objects are read one at a time while the ZIP streams out; a missing one aborts the download.
+  const object = (key: string) => async () => {
+    const obj = await c.env.EVIDENCE.get(key);
+    if (!obj) throw new Error(`oggetto mancante nell'archivio: ${key}`);
+    return new Uint8Array(await obj.arrayBuffer());
+  };
+  const text = (s: string) => async () => enc.encode(s);
 
   for (const p of photos) {
-    const orig = await c.env.EVIDENCE.get(p.original_key);
-    if (!orig) throw new Error(`foto ${p.idx + 1} mancante`);
     const ext = p.original_key.split(".").pop();
-    add(`originali/foto-${p.idx + 1}.${ext}`, new Uint8Array(await orig.arrayBuffer()), p.sha256);
-    if (p.derived_key) {
-      const d = await c.env.EVIDENCE.get(p.derived_key);
-      if (d) add(`copie-con-gps/foto-${p.idx + 1}-gps.jpg`, new Uint8Array(await d.arrayBuffer()), p.derived_sha256 ?? undefined);
-    }
+    add(`originali/foto-${p.idx + 1}.${ext}`, object(p.original_key), p.sha256);
+    if (p.derived_key) add(`copie-con-gps/foto-${p.idx + 1}-gps.jpg`, object(p.derived_key), p.derived_sha256 ?? undefined);
   }
-  const manifest = await c.env.EVIDENCE.get(r.manifest_key);
-  if (!manifest) throw new Error("manifest mancante");
-  add("manifest.json", new Uint8Array(await manifest.arrayBuffer()), r.manifest_sha256);
+  add("manifest.json", object(r.manifest_key), r.manifest_sha256);
 
-  const enc = new TextEncoder();
   const chainInfo = {
     seq: chain.seq,
     prevHash: chain.prev_hash,
@@ -350,22 +326,19 @@ reports.get("/:id/pacchetto.zip", async (c) => {
     previousEntry: prev ?? null,
     timestamp: { status: chain.tsa_status, genTime: chain.tsa_gen_time, tsaUrl: c.env.TSA_URL || null },
   };
-  add("catena.json", enc.encode(JSON.stringify(chainInfo, null, 2)));
-  if (chain.tsa_key) {
-    const tsr = await c.env.EVIDENCE.get(chain.tsa_key);
-    if (tsr) add("marca-temporale.tsr", new Uint8Array(await tsr.arrayBuffer()));
-  }
+  add("catena.json", text(JSON.stringify(chainInfo, null, 2)));
+  if (chain.tsa_key) add("marca-temporale.tsr", object(chain.tsa_key));
   const { results: history } = await c.env.DB.prepare(
     `SELECT a.at, a.action, u.name AS utente, a.detail FROM audit_log a LEFT JOIN users u ON u.id = a.user_id WHERE a.report_id = ? ORDER BY a.id`,
   )
     .bind(r.id)
     .all();
-  add("registro-accessi.json", enc.encode(JSON.stringify(history, null, 2)));
-  add("SHA256SUMS", enc.encode(sums.join("\n") + "\n"));
-  add("LEGGIMI.txt", enc.encode(readme(r, chainInfo.preimage, chain)));
+  add("registro-accessi.json", text(JSON.stringify(history, null, 2)));
+  add("SHA256SUMS", text(sums.join("\n") + "\n"));
+  add("LEGGIMI.txt", text(readme(r, chainInfo.preimage, chain)));
 
   await audit(c.env, { userId: user.id, action: "export_pacchetto", reportId: r.id });
-  return new Response(buildZip(entries), {
+  return new Response(streamZip(entries), {
     headers: {
       "content-type": "application/zip",
       "content-disposition": `attachment; filename="segnalazione-${r.id}.zip"`,
@@ -461,8 +434,8 @@ exportsApi.get("/segnalazioni.csv", async (c) => {
   await audit(c.env, { userId: user.id, action: "export_csv", detail: { segnalazioni: rows.length } });
   const esc = (v: unknown) => {
     const s = v === null || v === undefined ? "" : String(v);
-    // Prefix formula-looking cells so spreadsheets don't execute them.
-    const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+    // Prefix formula-looking text so spreadsheets don't execute it; numbers (a negative longitude) stay numbers.
+    const safe = typeof v === "string" && /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
     return /[";\n\r]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
   };
   const header = ["id", "ricevuta", "categoria", "stato", "latitudine", "longitudine", "origine_posizione", "avvisi", "canale", "descrizione", "catena_seq", "catena_impronta", "marca_temporale"];
@@ -479,8 +452,9 @@ exportsApi.get("/segnalazioni.csv", async (c) => {
 exportsApi.get("/catena/verifica", async (c) => {
   const user = requireActiveOperator(c, "admin");
   const deep = c.req.query("completa") === "1";
-  const result = await verifyChain(c.env, deep);
-  await audit(c.env, { userId: user.id, action: "verifica_catena", detail: { completa: deep, esito: result.ok, voci: result.length } });
+  const from = Math.max(1, Math.floor(Number(c.req.query("da")) || 1));
+  const result = await verifyChain(c.env, deep, from);
+  await audit(c.env, { userId: user.id, action: "verifica_catena", detail: { completa: deep, da: from, esito: result.ok, voci: result.length } });
   return c.json(result);
 });
 

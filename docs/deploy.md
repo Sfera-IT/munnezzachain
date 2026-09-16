@@ -17,7 +17,7 @@ npm run deploy
 node scripts/create-admin.ts tua@email.it "Nome Cognome"
 ```
 
-`npm run deploy` esegue controllo dei tipi, test e build, poi pubblica il Worker con `APP_VERSION` uguale alla versione della PWA.
+`npm run deploy` rifiuta modifiche non committate, esegue controllo dei tipi, test e build, poi pubblica il Worker con `APP_VERSION` uguale alla versione della PWA. Gli end-to-end non sono nel deploy: girano su GitHub Actions a ogni push, e conviene aspettarne l'esito.
 
 ## Blocco di conservazione (R2 bucket lock)
 
