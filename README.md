@@ -30,8 +30,8 @@ src/shared/   EXIF, impronte, modello dati e catena (usati da browser e Worker)
 src/worker/   API su Cloudflare Workers (Hono), D1, R2, marca temporale
 src/web/      PWA senza framework, service worker, viste
 migrations/   schema D1 con trigger che impediscono modifiche ai dati probatori
-scripts/      build, icone, creazione amministratore, smoke test end-to-end
-test/         test unitari (vitest)
+scripts/      build, icone, creazione amministratore
+test/         test unitari (vitest) ed end-to-end (test/e2e)
 ```
 
 ## Comandi
@@ -39,6 +39,7 @@ test/         test unitari (vitest)
 ```sh
 npm run dev         # build di sviluppo + wrangler dev
 npm test            # test unitari
+npm run test:e2e    # end-to-end: API, browser, offline, aggiornamenti, accessibilità
 npm run typecheck   # tipi di Worker, PWA e service worker
 npm run deploy      # controlli, build versionata e deploy
 ```

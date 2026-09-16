@@ -11,24 +11,28 @@
     "db:migrate:remote": "wrangler d1 migrations apply munnezzachain --remote",
     "create-admin": "node scripts/create-admin.ts",
     "deploy": "npm run typecheck && npm test && node scripts/build-web.ts && wrangler deploy --var APP_VERSION:$(cat .app-version)",
-    "icons": "node scripts/make-icons.ts"
+    "icons": "node scripts/make-icons.ts",
+    "test:e2e": "node test/e2e/run.ts",
+    "test:all": "npm run typecheck && npm test && npm run test:e2e"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/amargiovanni/munnezzachain.git"
+    "url": "git+https://github.com/Sfera-IT/munnezzachain.git"
   },
   "type": "module",
   "bugs": {
-    "url": "https://github.com/amargiovanni/munnezzachain/issues"
+    "url": "https://github.com/Sfera-IT/munnezzachain/issues"
   },
-  "homepage": "https://github.com/amargiovanni/munnezzachain#readme",
+  "homepage": "https://github.com/Sfera-IT/munnezzachain#readme",
   "dependencies": {
     "hono": "^4.13.8",
     "leaflet": "^1.9.4"
   },
   "devDependencies": {
     "@types/leaflet": "^1.9.22",
+    "axe-core": "^4.13.0",
     "esbuild": "^0.28.2",
+    "puppeteer-core": "^25.11.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1",
     "wrangler": "^4.132.0"

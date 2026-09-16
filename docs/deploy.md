@@ -67,7 +67,18 @@ Segreti (`npx wrangler secret put NOME`):
 npm run db:migrate:local
 node scripts/create-admin.ts admin@example.test "Admin Locale" --local
 npm run dev                       # http://localhost:8787
-node scripts/smoke.ts http://localhost:8787 admin@example.test <password>
 ```
+
+## Test
+
+| Comando | Cosa verifica |
+|---|---|
+| `npm run typecheck` | tipi di Worker, PWA e service worker |
+| `npm test` | EXIF (anche su file scritti da exiftool), impronte, catena, marca temporale RFC 3161 su una risposta reale di FreeTSA verificata con `openssl`, ZIP, password, validazione degli invii, trigger del database |
+| `npm run test:e2e` | avvia un'istanza locale isolata e prova API e browser: invio con fotocamera e GPS, file alterati, reinvii, permessi, moderazione, rifiuto, pacchetto probatorio, catena, export, coda offline, app senza rete, aggiornamenti della PWA, accessibilità WCAG 2.2 AA con axe |
+
+Gli end-to-end richiedono Chrome o Chromium (`CHROME_PATH` se non viene trovato) e non usano la rete: la marca temporale è disattivata nell'istanza di test ed è coperta dai test unitari.
+
+Su GitHub il workflow `.github/workflows/test.yml` esegue tutto a ogni push su `main` e a ogni pull request.
 
 La fotocamera e la posizione richiedono HTTPS o `localhost`.

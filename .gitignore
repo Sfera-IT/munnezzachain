@@ -9,3 +9,4 @@ coverage/
 public/index.html
 public/version.json
 .app-version
+.wrangler.e2e.jsonc

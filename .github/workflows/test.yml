@@ -1,0 +1,52 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Tipi, test unitari e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - name: Controllo dei tipi (Worker, PWA, service worker)
+        run: npm run typecheck
+      - name: Test unitari
+        run: npm test
+      - name: Build della PWA
+        run: node scripts/build-web.ts
+
+  e2e:
+    name: End-to-end (API, browser, accessibilità)
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      WRANGLER_SEND_METRICS: "false"
+      CHROME_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - name: Test end-to-end su istanza locale
+        run: npm run test:e2e
