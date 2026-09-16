@@ -115,7 +115,7 @@ export function verifyView() {
     if (f) await lookup(await sha256Hex(await f.arrayBuffer()), f.name);
   });
 
-  const hashInput = h("input", { type: "text", placeholder: "oppure incolla un'impronta SHA-256", spellcheck: false, autocapitalize: "off" });
+  const hashInput = h("input", { type: "text", placeholder: "oppure incolla un'impronta SHA-256", "aria-label": "Impronta SHA-256", spellcheck: false, autocapitalize: "off" });
   return h(
     "section",
     { class: "stack" },

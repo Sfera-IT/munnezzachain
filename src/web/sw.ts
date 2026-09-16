@@ -33,7 +33,7 @@ sw.addEventListener("fetch", (event) => {
 
   if (req.mode === "navigate") {
     event.respondWith(
-      fetch(req).catch(async () => (await caches.match("/index.html", { cacheName: CACHE })) ?? Response.error()),
+      fetch(req).catch(async () => (await caches.match("/", { cacheName: CACHE })) ?? Response.error()),
     );
     return;
   }

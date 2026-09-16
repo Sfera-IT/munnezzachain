@@ -42,12 +42,13 @@ interface Node {
 }
 
 function readNode(b: Uint8Array, at: number): Node {
+  if (at + 2 > b.length) throw new Error("DER troncato");
   const tag = b[at]!;
   let len = b[at + 1]!;
   let contentStart = at + 2;
   if (len & 0x80) {
     const n = len & 0x7f;
-    if (n === 0 || n > 4) throw new Error("lunghezza DER non supportata");
+    if (n === 0 || n > 4 || at + 2 + n > b.length) throw new Error("lunghezza DER non supportata");
     len = 0;
     for (let i = 0; i < n; i++) len = (len << 8) | b[at + 2 + i]!;
     contentStart += n;
@@ -72,10 +73,21 @@ const indexOf = (hay: Uint8Array, needle: Uint8Array) => {
   return -1;
 };
 
+/** Never throws: a malformed response is reported as not granted. */
 export function inspectTimeStampResponse(resp: Uint8Array, digestHex: string, nonce: Uint8Array): TsaResult {
+  try {
+    return inspect(resp, digestHex, nonce);
+  } catch (e) {
+    return { granted: false, status: -1, error: `risposta TSA malformata: ${(e as Error).message}` };
+  }
+}
+
+function inspect(resp: Uint8Array, digestHex: string, nonce: Uint8Array): TsaResult {
   const outer = readNode(resp, 0);
+  if (outer.tag !== 0x30) throw new Error("atteso SEQUENCE");
   const statusInfo = readNode(resp, outer.contentStart);
   const statusInt = readNode(resp, statusInfo.contentStart);
+  if (statusInfo.tag !== 0x30 || statusInt.tag !== 0x02 || statusInt.end === statusInt.contentStart) throw new Error("PKIStatusInfo non valido");
   const status = resp[statusInt.end - 1]!;
   if (status > 1) return { granted: false, status, error: `la TSA ha rifiutato la richiesta (stato ${status})` };
   if (statusInfo.end >= outer.end) return { granted: false, status, error: "risposta senza token" };
@@ -113,9 +125,5 @@ export async function requestTimestamp(cfg: TsaConfig, digestHex: string): Promi
   const res = await fetch(cfg.url, { method: "POST", headers, body: buildTimeStampRequest(digestHex, nonce) });
   if (!res.ok) return { result: { granted: false, status: -1, error: `HTTP ${res.status} dalla TSA` } };
   const response = new Uint8Array(await res.arrayBuffer());
-  try {
-    return { result: inspectTimeStampResponse(response, digestHex, nonce), response };
-  } catch (e) {
-    return { result: { granted: false, status: -1, error: `risposta TSA illeggibile: ${(e as Error).message}` } };
-  }
+  return { result: inspectTimeStampResponse(response, digestHex, nonce), response };
 }

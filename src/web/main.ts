@@ -105,6 +105,11 @@ async function main() {
   window.addEventListener("online", net);
   window.addEventListener("offline", net);
   net();
+  // "online" is unreliable on phones that regain signal: retry periodically and when the app is reopened.
+  setInterval(() => void flushOutbox(), 60_000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void flushOutbox();
+  });
 
   window.addEventListener("outbox-changed", () => {
     if (location.hash === "#/" || location.hash === "") void render();

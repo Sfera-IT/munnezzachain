@@ -131,11 +131,11 @@ export async function opsReportView(id: string) {
   if (pending && isAdmin()) {
     const reason = h(
       "select",
-      null,
+      { "aria-label": "Motivo del rifiuto" },
       h("option", { value: "" }, "Motivo del rifiuto…"),
       Object.entries(session.config?.rejectionReasons ?? {}).map(([k, v]) => h("option", { value: k }, v)),
     );
-    const note = h("input", { type: "text", placeholder: "Nota interna (facoltativa)", maxlength: 500 });
+    const note = h("input", { type: "text", placeholder: "Nota interna (facoltativa)", "aria-label": "Nota interna", maxlength: 500 });
     const decide = async (decision: "accetta" | "rifiuta") => {
       if (decision === "rifiuta" && !reason.value) {
         toast("Scegli il motivo del rifiuto", "error");

@@ -50,7 +50,8 @@ const statics = (dir: string): string[] =>
     const p = join(dir, f);
     return statSync(p).isDirectory() ? statics(p) : ["/" + relative("public", p)];
   });
-const precache = ["/index.html", "/manifest.webmanifest", ...outputs, ...statics("public/icons")];
+// "/" and not "/index.html": the assets server redirects the latter, and a cached redirect cannot serve a navigation.
+const precache = ["/", "/manifest.webmanifest", ...outputs, ...statics("public/icons")];
 
 await build({
   entryPoints: ["src/web/sw.ts"],

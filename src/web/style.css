@@ -202,7 +202,7 @@ textarea { resize: vertical; }
 
 .list-row { display: flex; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); text-decoration: none; }
 a.list-row:hover { border-color: var(--primary); }
-.list-row.inactive { opacity: 0.6; }
+.list-row.inactive { background: var(--surface-2); border-style: dashed; }
 .thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; flex: none; background: var(--surface-2); }
 .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
 
@@ -235,7 +235,7 @@ pre.code { white-space: pre-wrap; word-break: break-all; font-size: 0.78rem; bac
 
 .photo-detail { display: grid; gap: 16px; grid-template-columns: 1fr; }
 @media (min-width: 760px) { .photo-detail { grid-template-columns: minmax(240px, 380px) 1fr; } }
-.photo-frame { align-self: start; position: relative; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.photo-frame { align-self: start; position: relative; min-height: 200px; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
 .photo-frame img { display: block; width: 100%; height: auto; }
 img.blurred { filter: blur(28px) saturate(0.4); transform: scale(1.1); }
 .reveal { position: absolute; inset: 0; margin: auto; width: fit-content; height: fit-content; padding: 10px 16px; border-radius: 10px; border: none; background: rgb(0 0 0 / 0.7); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }

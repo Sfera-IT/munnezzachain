@@ -68,18 +68,19 @@ async function fail(item: OutboxItem, retryable: boolean, message: string): Prom
 
 /** Sends everything still waiting that can plausibly succeed. Safe to call repeatedly. */
 export function flushOutbox(): Promise<void> {
-  flushing ??= (async () => {
-    try {
-      if (!navigator.onLine) return;
-      for (const item of await outbox.all()) {
-        if (item.rejected) continue;
-        const r = await send(item);
-        if (!r.ok && r.retryable) break;
-      }
-    } finally {
-      flushing = null;
-      window.dispatchEvent(new Event("outbox-changed"));
+  if (flushing) return flushing;
+  // The flag is cleared in a .finally attached after assignment: clearing it inside the async body would run
+  // synchronously on an early return and leave a stale promise that blocks every later flush.
+  flushing = (async () => {
+    if (!navigator.onLine) return;
+    for (const item of await outbox.all()) {
+      if (item.rejected) continue;
+      const r = await send(item);
+      if (!r.ok && r.retryable) break;
     }
-  })();
+  })().finally(() => {
+    flushing = null;
+    window.dispatchEvent(new Event("outbox-changed"));
+  });
   return flushing;
 }

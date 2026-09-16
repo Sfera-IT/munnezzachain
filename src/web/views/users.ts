@@ -85,9 +85,9 @@ export async function usersView() {
     );
   };
 
-  const email = h("input", { type: "email", required: true, placeholder: "email" });
-  const name = h("input", { type: "text", required: true, placeholder: "Nome e cognome" });
-  const role = h("select", null, h("option", { value: "operatore" }, "Operatore"), h("option", { value: "admin" }, "Amministratore"));
+  const email = h("input", { type: "email", required: true, placeholder: "email", "aria-label": "Email" });
+  const name = h("input", { type: "text", required: true, placeholder: "Nome e cognome", "aria-label": "Nome e cognome" });
+  const role = h("select", { "aria-label": "Ruolo" }, h("option", { value: "operatore" }, "Operatore"), h("option", { value: "admin" }, "Amministratore"));
   await load();
 
   return h(
