@@ -27,7 +27,8 @@ app.use("*", loadSession);
 
 app.get("/config", (c) =>
   c.json({
-    turnstileSiteKey: c.env.TURNSTILE_SITE_KEY || null,
+    // Only when the Worker enforces it: a local `wrangler dev` without the secret must not load the production widget.
+    turnstileSiteKey: (c.env.TURNSTILE_SECRET_KEY && c.env.TURNSTILE_SITE_KEY) || null,
     publicAreaBbox: c.env.PUBLIC_AREA_BBOX ? c.env.PUBLIC_AREA_BBOX.split(",").map(Number) : null,
     privacyContact: c.env.PRIVACY_CONTACT || null,
     timestamping: Boolean(c.env.TSA_URL),

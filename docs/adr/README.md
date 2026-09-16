@@ -8,3 +8,4 @@
 | [0004](0004-quarantena-e-moderazione-delle-segnalazioni-pubbliche.md) | Quarantena e moderazione delle segnalazioni pubbliche | Proposed | 2026-09-16 |
 | [0005](0005-solo-scatto-in-app-per-il-pubblico.md) | Solo scatto in app per il pubblico | Proposed | 2026-09-16 |
 | [0006](0006-aggiornamenti-pwa-versionati.md) | Aggiornamenti PWA versionati | Proposed | 2026-09-16 |
+| [0007](0007-turnstile-su-login-e-segnalazioni-pubbliche.md) | Turnstile su login e segnalazioni pubbliche | Proposed | 2026-09-16 |
