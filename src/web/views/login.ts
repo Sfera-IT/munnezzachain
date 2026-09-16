@@ -1,6 +1,7 @@
 import { h } from "../dom.ts";
 import { api, refreshSession, session, type Me } from "../api.ts";
 import { navigate } from "../router.ts";
+import { turnstileToken } from "../turnstile.ts";
 
 export function loginView() {
   const email = h("input", { type: "text", autocomplete: "username", autocapitalize: "off", spellcheck: false, required: true });
@@ -20,7 +21,8 @@ export function loginView() {
           error.textContent = "";
           btn.disabled = true;
           try {
-            const { user } = await api<{ user: Me }>("/auth/login", { method: "POST", json: { email: email.value, password: password.value } });
+            const token = await turnstileToken("login");
+            const { user } = await api<{ user: Me }>("/auth/login", { method: "POST", json: { email: email.value, password: password.value, turnstileToken: token ?? undefined } });
             await refreshSession();
             navigate(user.mustChangePassword ? "#/password" : "#/operatori");
           } catch (err) {

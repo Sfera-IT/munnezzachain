@@ -1,8 +1,10 @@
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -24,8 +26,8 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   window.dispatchEvent(new CustomEvent("connectivity", { detail: true }));
   const serverVersion = res.headers.get("x-app-version");
   if (serverVersion) versionListeners.forEach((fn) => fn(serverVersion));
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new ApiError(res.status, data.error ?? `Errore ${res.status}`);
+  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+  if (!res.ok) throw new ApiError(res.status, data.error ?? `Errore ${res.status}`, data.code);
   return data as T;
 }
 

@@ -2,6 +2,7 @@
 import { buildExifSegment, replaceExif, readExif } from "../../src/shared/exif.ts";
 import { sha256Hex } from "../../src/shared/bytes.ts";
 import { ok, section } from "./assert.ts";
+import { TURNSTILE_DUMMY_TOKEN } from "./instance.ts";
 
 type Json = Record<string, any>;
 
@@ -40,8 +41,8 @@ class Client {
     return { status: res.status, data: (await res.json().catch(() => ({}))) as Json };
   }
 
-  async login(login: string, password: string) {
-    return this.json("/api/auth/login", { method: "POST", json: { email: login, password } });
+  async login(login: string, password: string, turnstileToken: string | null = TURNSTILE_DUMMY_TOKEN) {
+    return this.json("/api/auth/login", { method: "POST", json: { email: login, password, turnstileToken } });
   }
 }
 
@@ -61,6 +62,7 @@ interface SubmitOptions {
   consent?: boolean;
   file?: Uint8Array;
   declaredSha?: string;
+  turnstileToken?: string | null;
 }
 
 async function submit(client: Client, seed: string, o: SubmitOptions = {}) {
@@ -77,6 +79,7 @@ async function submit(client: Client, seed: string, o: SubmitOptions = {}) {
     clientCreatedAt: p.at,
     queued: false,
     photos: [{ index: 0, sha256: o.declaredSha ?? p.sha, size: file.length, origin, capturedAt: p.at, location }],
+    ...(o.turnstileToken === null ? {} : { turnstileToken: o.turnstileToken ?? TURNSTILE_DUMMY_TOKEN }),
   };
   const body = new FormData();
   body.set("meta", JSON.stringify(meta));
@@ -105,6 +108,10 @@ export async function runApiTests(base: string, adminLogin: string, adminPasswor
   ok((await submit(pub, "senza-consenso", { consent: false })).status === 422, "senza presa visione dell'informativa il pubblico non può inviare");
   ok((await submit(pub, "galleria", { origin: "file_upload" })).status === 422, "il pubblico non può caricare dalla galleria");
 
+  {
+    const r = await submit(pub, "senza-turnstile", { turnstileToken: null });
+    ok(r.status === 403 && r.data.code === "turnstile", "senza verifica anti-spam l'invio pubblico è rifiutato");
+  }
   const first = await submit(pub, "uno", { description: "=HYPERLINK(\"http://evil.example\")" });
   ok(first.status === 201 && first.data.moderation === "in_attesa", `segnalazione pubblica in quarantena (${first.data.reportId}, anello ${first.data.seq})`);
   ok(readExif(first.photo.bytes)?.gps, "la foto inviata contiene il GPS nell'EXIF");
@@ -121,6 +128,7 @@ export async function runApiTests(base: string, adminLogin: string, adminPasswor
         consent: true,
         clientCreatedAt: p.at,
         queued: true,
+        turnstileToken: TURNSTILE_DUMMY_TOKEN,
         photos: [{ index: 0, sha256: p.sha, size: p.bytes.length, origin: "in_app_camera", capturedAt: p.at, location: { lat: 45.4599, lon: 10.9796, accuracy: 6, fixTime: p.at, source: "device_gps" } }],
       }),
     );
@@ -139,6 +147,10 @@ export async function runApiTests(base: string, adminLogin: string, adminPasswor
 
   section("API: accesso e permessi");
   ok((await pub.call("/api/segnalazioni")).status === 401, "elenco protetto senza accesso");
+  {
+    const r = await admin.login(adminLogin, adminPassword, null);
+    ok(r.status === 403 && r.data.code === "turnstile" && !admin.cookie, "senza verifica anti-spam il login è rifiutato anche con la password giusta");
+  }
   ok((await admin.login(adminLogin, "password-sbagliata")).status === 401, "password errata rifiutata");
   ok((await admin.login(adminLogin, adminPassword)).status === 200, "login amministratore");
   ok((await admin.call("/api/segnalazioni")).status === 403, "con password provvisoria i dati restano bloccati");

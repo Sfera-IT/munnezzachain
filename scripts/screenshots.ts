@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildExifSegment, exifLocalDate, replaceExif } from "../src/shared/exif.ts";
 import { sha256Hex } from "../src/shared/bytes.ts";
-import { build, root, startInstance, type Instance } from "../test/e2e/instance.ts";
+import { build, root, startInstance, TURNSTILE_DUMMY_TOKEN, type Instance } from "../test/e2e/instance.ts";
 
 const OUT = join(root, "docs/screenshots");
 const CACHE = join(root, ".demo-cache");
@@ -138,7 +138,7 @@ async function withExif(photo: Uint8Array, lat: number, lon: number, accuracy: n
 
 async function seed(instance: Instance, photos: Map<string, Uint8Array>) {
   const admin = new Client(instance.base);
-  await admin.call("/api/auth/login", { method: "POST", json: { email: instance.adminLogin, password: instance.adminPassword } });
+  await admin.call("/api/auth/login", { method: "POST", json: { email: instance.adminLogin, password: instance.adminPassword, turnstileToken: TURNSTILE_DUMMY_TOKEN } });
   const adminPassword = "ufficio-ambiente-demo";
   await admin.call("/api/auth/password", { method: "POST", json: { current: instance.adminPassword, next: adminPassword } });
 
@@ -149,7 +149,7 @@ async function seed(instance: Instance, photos: Map<string, Uint8Array>) {
   ] as const) {
     const { temporaryPassword } = await admin.call("/api/utenti", { method: "POST", json: { email: `${key}@parco.example`, name, role: "operatore" } });
     const c = new Client(instance.base);
-    await c.call("/api/auth/login", { method: "POST", json: { email: `${key}@parco.example`, password: temporaryPassword } });
+    await c.call("/api/auth/login", { method: "POST", json: { email: `${key}@parco.example`, password: temporaryPassword, turnstileToken: TURNSTILE_DUMMY_TOKEN } });
     await c.call("/api/auth/password", { method: "POST", json: { current: temporaryPassword, next: `${key}-password-demo` } });
     rangers[key] = c;
   }
@@ -169,6 +169,7 @@ async function seed(instance: Instance, photos: Map<string, Uint8Array>) {
       clientCreatedAt: when.toISOString(),
       queued: false,
       photos: [{ index: 0, sha256: p.sha, size: p.bytes.length, origin, capturedAt: when.toISOString(), location }],
+      turnstileToken: TURNSTILE_DUMMY_TOKEN,
     };
     const body = new FormData();
     body.set("meta", JSON.stringify(meta));

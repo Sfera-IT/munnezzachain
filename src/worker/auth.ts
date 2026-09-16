@@ -5,7 +5,7 @@ import { HTTPException } from "hono/http-exception";
 import { sha256Hex, toHex } from "../shared/bytes.ts";
 import { hashPassword, verifyPassword } from "../shared/password.ts";
 import type { AppEnv, SessionUser } from "./env.ts";
-import { audit, clientIp, readJson } from "./util.ts";
+import { audit, clientIp, readJson, turnstileOk, TURNSTILE_FAILED } from "./util.ts";
 
 const COOKIE = "mc_session";
 const SESSION_DAYS = 30;
@@ -67,7 +67,9 @@ auth.post("/login", async (c) => {
   const { success } = await c.env.LOGIN_LIMITER.limit({ key: clientIp(c) });
   if (!success) return c.json({ error: "Troppi tentativi, riprova tra un minuto" }, 429);
 
-  const body = await c.req.json<{ email?: string; password?: string }>().catch(() => ({}) as { email?: string; password?: string });
+  const body = await c.req.json<{ email?: string; password?: string; turnstileToken?: string }>().catch(() => ({}) as { email?: string; password?: string; turnstileToken?: string });
+  // Before any password is checked: a distributed guessing attack gets past the per-address limiter, not past this.
+  if (!(await turnstileOk(c, body.turnstileToken))) return c.json(TURNSTILE_FAILED, 403);
   const email = String(body.email ?? "").trim();
   const password = String(body.password ?? "");
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first<UserRow>();

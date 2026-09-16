@@ -1,37 +1,6 @@
-import { api, ApiError, session } from "./api.ts";
+import { api, ApiError, isOperator } from "./api.ts";
+import { turnstileToken } from "./turnstile.ts";
 import { outbox, receipts, type OutboxItem, type StoredReceipt } from "./store.ts";
-
-let turnstileLoaded: Promise<void> | null = null;
-
-async function turnstileToken(siteKey: string): Promise<string> {
-  type TS = { render(el: HTMLElement, o: Record<string, unknown>): string; execute(id: string): void; remove(id: string): void };
-  turnstileLoaded ??= new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("verifica anti-spam non caricata"));
-    document.head.append(s);
-  });
-  await turnstileLoaded;
-  const ts = (window as unknown as { turnstile: TS }).turnstile;
-  const holder = document.createElement("div");
-  holder.className = "turnstile-holder";
-  document.body.append(holder);
-  try {
-    return await new Promise<string>((resolve, reject) => {
-      const id = ts.render(holder, {
-        sitekey: siteKey,
-        execution: "execute",
-        appearance: "interaction-only",
-        callback: (t: string) => resolve(t),
-        "error-callback": () => reject(new Error("verifica anti-spam non superata")),
-      });
-      ts.execute(id);
-    });
-  } finally {
-    holder.remove();
-  }
-}
 
 export type SendResult = { ok: true; receipt: StoredReceipt } | { ok: false; retryable: boolean; message: string };
 
@@ -40,10 +9,15 @@ let flushing: Promise<void> | null = null;
 export async function send(item: OutboxItem): Promise<SendResult> {
   // Anything not sent on the first try is flagged as queued, so reviewers know capture and upload were apart.
   const meta = { ...item.meta, queued: item.meta.queued || item.attempts > 0 || !navigator.onLine };
-  try {
-    if (session.config?.turnstileSiteKey && !session.me) meta.turnstileToken = await turnstileToken(session.config.turnstileSiteKey);
-  } catch (e) {
-    return fail(item, false, (e as Error).message);
+  // The server asks for it from anyone who is not an active operator, including a user still on a temporary password.
+  if (!isOperator()) {
+    try {
+      const token = await turnstileToken("segnalazione");
+      if (token) meta.turnstileToken = token;
+    } catch (e) {
+      // A widget that did not load (weak signal) or a failed challenge: the report stays queued for another try.
+      return fail(item, true, (e as Error).message);
+    }
   }
   const form = new FormData();
   form.set("meta", JSON.stringify(meta));
@@ -56,7 +30,7 @@ export async function send(item: OutboxItem): Promise<SendResult> {
     return { ok: true, receipt };
   } catch (e) {
     const err = e as ApiError;
-    const retryable = err.status === 0 || err.status === 429 || err.status >= 500;
+    const retryable = err.status === 0 || err.status === 429 || err.status >= 500 || err.code === "turnstile";
     return fail(item, retryable, err.message);
   }
 }

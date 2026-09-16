@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { Context } from "hono";
 import { isSha256Hex, sha256Hex, sniffImageMime, extensionFor, canonicalJson } from "../shared/bytes.ts";
 import { readExif, buildExifSegment, replaceExif } from "../shared/exif.ts";
 import type { ExifInfo } from "../shared/exif.ts";
@@ -20,7 +19,7 @@ import {
 } from "../shared/model.ts";
 import type { AppEnv, Env } from "./env.ts";
 import { appendToChain, timestampLink, type ChainRow } from "./chain.ts";
-import { audit, clientIp, newReportId } from "./util.ts";
+import { audit, clientIp, newReportId, turnstileOk, TURNSTILE_FAILED } from "./util.ts";
 import { storageKeys } from "./storage.ts";
 
 class Invalid extends Error {}
@@ -111,17 +110,6 @@ function withinPublicArea(env: Env, loc: PhotoLocation): boolean {
   return loc.lon >= minLon! && loc.lon <= maxLon! && loc.lat >= minLat! && loc.lat <= maxLat!;
 }
 
-async function turnstileOk(c: Context<AppEnv>, token: string | undefined): Promise<boolean> {
-  if (!c.env.TURNSTILE_SECRET_KEY) return true;
-  if (!token) return false;
-  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    body: new URLSearchParams({ secret: c.env.TURNSTILE_SECRET_KEY, response: token, remoteip: clientIp(c) }),
-  });
-  const data = await res.json<{ success: boolean }>();
-  return data.success === true;
-}
-
 export interface Receipt {
   reportId: string;
   receivedAt: string;
@@ -178,7 +166,7 @@ submit.post("/", async (c) => {
   if (existing) return c.json({ ...existing, duplicate: true });
 
   if (!operator && !(await turnstileOk(c, meta.turnstileToken))) {
-    return c.json({ error: "Verifica anti-spam non superata. Ricarica la pagina e riprova." }, 403);
+    return c.json(TURNSTILE_FAILED, 403);
   }
 
   const receivedAt = new Date();

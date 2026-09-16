@@ -1,5 +1,5 @@
-// An isolated local instance: fresh D1/R2 state, production bindings with a generous public rate limit and
-// no external TSA. Shared by the end-to-end tests and the README screenshot generator.
+// An isolated local instance: fresh D1/R2 state, production bindings with a generous public rate limit,
+// Turnstile test keys (the widget still needs the network) and no external TSA. Shared by the end-to-end tests and the README screenshot generator.
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,6 +11,11 @@ export const root = new URL("../../", import.meta.url).pathname;
 export function build(version: string) {
   execFileSync("node", ["scripts/build-web.ts"], { cwd: root, stdio: ["ignore", "ignore", "inherit"], env: { ...process.env, APP_VERSION: version } });
 }
+
+/** Cloudflare's Turnstile test keys: the site key always yields TURNSTILE_DUMMY_TOKEN, the secret accepts only that token. */
+export const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000BB";
+export const TURNSTILE_TEST_SECRET = "1x0000000000000000000000000000000AA";
+export const TURNSTILE_DUMMY_TOKEN = "XXXX.DUMMY.TOKEN.XXXX";
 
 export interface Instance {
   base: string;
@@ -38,6 +43,8 @@ export async function startInstance(opts: { port: number; version: string; admin
   // Tests stay offline; screenshots may use the real TSA to show a granted timestamp.
   if (!opts.timestamping) edit(/"TSA_URL": "[^"]*"/, '"TSA_URL": ""');
   edit(/\s*"routes": \[[^\]]*\],/, "");
+  // Cloudflare's test site key: the real widget loads and always hands out the dummy token.
+  edit(/"TURNSTILE_SITE_KEY": "[^"]*"/, `"TURNSTILE_SITE_KEY": "${TURNSTILE_TEST_SITE_KEY}"`);
   writeFileSync(config, c);
 
   let dev: ChildProcess | undefined;
@@ -64,7 +71,7 @@ export async function startInstance(opts: { port: number; version: string; admin
       `INSERT INTO users (id, email, name, role, password_hash, active, must_change_password, created_at)
        VALUES ('admin-locale', 'admin', '${opts.adminName ?? "Admin"}', 'admin', '${await hashPassword(adminPassword)}', 1, 1, '${new Date().toISOString()}')`,
     ]);
-    dev = spawn(bin, ["dev", "-c", config, "--port", String(opts.port), "--persist-to", persist, "--var", `APP_VERSION:${opts.version}`, "--show-interactive-dev-session=false"], {
+    dev = spawn(bin, ["dev", "-c", config, "--port", String(opts.port), "--persist-to", persist, "--var", `APP_VERSION:${opts.version}`, "--var", `TURNSTILE_SECRET_KEY:${TURNSTILE_TEST_SECRET}`, "--show-interactive-dev-session=false"], {
       cwd: root,
       env,
       stdio: ["ignore", "pipe", "pipe"],
